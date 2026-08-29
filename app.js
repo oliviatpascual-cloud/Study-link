@@ -28,7 +28,13 @@ const workshopPause = document.querySelector('#workshop-pause');
 const workshopPrompt = document.querySelector('#workshop-prompt-text');
 const authButton = document.querySelector('#auth-button');
 const authModal = document.querySelector('#auth-modal');
-const googleSignin = document.querySelector('#google-signin');
+const authForm = document.querySelector('#auth-form');
+const authSubmit = document.querySelector('#auth-submit');
+const authModeSwitch = document.querySelector('#auth-mode-switch');
+const authUsername = document.querySelector('#auth-username');
+const authPassword = document.querySelector('#auth-password');
+const authEyebrow = document.querySelector('#auth-eyebrow');
+const authCopy = document.querySelector('#auth-copy');
 let toastTimer;
 let sessionTimer;
 let sessionSeconds = 0;
@@ -38,6 +44,7 @@ let workshopPaused = true;
 let promptIndex = 0;
 let signedInUser = null;
 let signedInProfileId = null;
+let authMode = 'create';
 const workshopPrompts = [
 	'What would make a student feel comfortable asking for help?',
 	'Which matching signal should matter most for a first session?',
@@ -133,6 +140,16 @@ function closeAuth() {
 	authModal.setAttribute('aria-hidden', 'true');
 }
 
+function setAuthMode(mode) {
+	authMode = mode;
+	const creating = mode === 'create';
+	authEyebrow.textContent = creating ? 'Create your StudyLink account' : 'Welcome back';
+	authCopy.textContent = creating ? 'Pick a unique display name and password. Supabase securely hashes your password and never stores it in your profile.' : 'Sign in with your unique StudyLink name and password. No personal email is requested or displayed.';
+	authSubmit.textContent = creating ? 'Create account' : 'Sign in';
+	authModeSwitch.textContent = creating ? 'Already have an account? Sign in' : 'Need an account? Create one';
+	authPassword.autocomplete = creating ? 'new-password' : 'current-password';
+}
+
 function updateAuthState(user) {
 	signedInUser = user;
 	if (user) {
@@ -140,7 +157,7 @@ function updateAuthState(user) {
 		authButton.classList.add('is-signed-in');
 		showDemoToast('Signed in securely. Your profile is connected to this account.');
 	} else {
-		authButton.textContent = 'Sign in with Google';
+		authButton.textContent = 'Sign in';
 		authButton.classList.remove('is-signed-in');
 	}
 }
@@ -258,13 +275,35 @@ authButton.addEventListener('click', async () => {
 	openAuth();
 });
 document.querySelectorAll('[data-close-auth]').forEach((closeButton) => closeButton.addEventListener('click', closeAuth));
-googleSignin.addEventListener('click', async () => {
+authModeSwitch.addEventListener('click', () => setAuthMode(authMode === 'create' ? 'sign-in' : 'create'));
+authForm.addEventListener('submit', async (event) => {
+	event.preventDefault();
 	if (!backendConnected) {
-		showDemoToast('Add your Supabase configuration before using Google sign-in.');
+		showDemoToast('Supabase is not configured for custom accounts yet.');
 		return;
 	}
-	const { error } = await window.studyLinkBackend.signInWithGoogle();
-	if (error) showDemoToast('Google sign-in could not start. Check the Supabase provider settings.');
+	authSubmit.disabled = true;
+	const result = authMode === 'create' ? await window.studyLinkBackend.createAccount(authUsername.value.trim(), authPassword.value) : await window.studyLinkBackend.signIn(authUsername.value.trim(), authPassword.value);
+	authSubmit.disabled = false;
+	if (result.error) {
+		showDemoToast(result.error.message || 'Account request failed.');
+		return;
+	}
+	if (authMode === 'create' && !result.data?.session) {
+		showDemoToast('Account created. Turn off email confirmation in Supabase Auth settings, then sign in.');
+		setAuthMode('sign-in');
+		return;
+	}
+	if (result.data?.user) {
+		const profile = await window.studyLinkBackend.ensureProfile(result.data.user);
+		if (profile.error) {
+			showDemoToast('Account created, but that display name is already taken. Choose another.');
+			return;
+		}
+		signedInProfileId = profile.data?.id || null;
+		updateAuthState(result.data.user);
+		closeAuth();
+	}
 });
 workshopPause.addEventListener('click', () => {
 	if (workshopPaused) {
