@@ -17,7 +17,7 @@ The website includes an optional Supabase adapter. Without configuration it stay
 3. Copy `supabase-config.example.js` to `supabase-config.js`.
 4. Put the project's public URL and anon key in `supabase-config.js`.
 
-The service-role key must never be placed in `supabase-config.js` or committed to GitHub. `supabase-config.js` is ignored by Git.
+The service-role key must never be placed in `supabase-config.js` or committed to GitHub. The public anon/publishable key is intended for browser use; database access is controlled by Supabase RLS policies.
 
 ## Publish With GitHub Pages
 
