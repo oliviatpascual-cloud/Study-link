@@ -26,6 +26,9 @@ const workshopDrawer = document.querySelector('#workshop-drawer');
 const workshopTime = document.querySelector('#workshop-time');
 const workshopPause = document.querySelector('#workshop-pause');
 const workshopPrompt = document.querySelector('#workshop-prompt-text');
+const authButton = document.querySelector('#auth-button');
+const authModal = document.querySelector('#auth-modal');
+const googleSignin = document.querySelector('#google-signin');
 let toastTimer;
 let sessionTimer;
 let sessionSeconds = 0;
@@ -33,6 +36,8 @@ let workshopTimer;
 let workshopSeconds = 3600;
 let workshopPaused = true;
 let promptIndex = 0;
+let signedInUser = null;
+let signedInProfileId = null;
 const workshopPrompts = [
 	'What would make a student feel comfortable asking for help?',
 	'Which matching signal should matter most for a first session?',
@@ -118,6 +123,28 @@ function closeWorkshop() {
 	workshopDrawer.setAttribute('aria-hidden', 'true');
 }
 
+function openAuth() {
+	authModal.classList.add('is-open');
+	authModal.setAttribute('aria-hidden', 'false');
+}
+
+function closeAuth() {
+	authModal.classList.remove('is-open');
+	authModal.setAttribute('aria-hidden', 'true');
+}
+
+function updateAuthState(user) {
+	signedInUser = user;
+	if (user) {
+		authButton.textContent = 'Sign out';
+		authButton.classList.add('is-signed-in');
+		showDemoToast('Signed in securely. Your profile is connected to this account.');
+	} else {
+		authButton.textContent = 'Sign in with Google';
+		authButton.classList.remove('is-signed-in');
+	}
+}
+
 function updateWorkshopClock() {
 	const minutes = String(Math.floor(workshopSeconds / 60)).padStart(2, '0');
 	const seconds = String(workshopSeconds % 60).padStart(2, '0');
@@ -161,7 +188,7 @@ async function sendMessage() {
 	addMessage(message, 'student');
 	messageInput.value = '';
 	if (backendConnected) {
-		const result = await window.studyLinkBackend.sendMessage({ tutorId: '00000000-0000-0000-0000-000000000002', senderId: '00000000-0000-0000-0000-000000000001', body: message });
+		const result = await window.studyLinkBackend.sendMessage({ tutorId: '00000000-0000-0000-0000-000000000002', senderId: signedInProfileId || '00000000-0000-0000-0000-000000000001', body: message });
 		if (result.error) {
 			showDemoToast('Message is visible locally, but Supabase rejected the save. Check your table policies.');
 			return;
@@ -173,6 +200,15 @@ async function sendMessage() {
 
 window.studyLinkBackend.connect().then((connected) => {
 	backendConnected = connected;
+	return window.studyLinkBackend.getSession();
+}).then(({ data }) => {
+	if (data && data.session) {
+		updateAuthState(data.session.user);
+		return window.studyLinkBackend.ensureProfile(data.session.user);
+	}
+	return null;
+}).then((result) => {
+	if (result && result.data) signedInProfileId = result.data.id;
 });
 
 demoStart.addEventListener('click', () => {
@@ -212,6 +248,24 @@ document.querySelectorAll('[data-close-guide]').forEach((closeButton) => closeBu
 workshopOpen.addEventListener('click', openWorkshop);
 workshopStart.addEventListener('click', startWorkshop);
 document.querySelectorAll('[data-close-workshop]').forEach((closeButton) => closeButton.addEventListener('click', closeWorkshop));
+authButton.addEventListener('click', async () => {
+	if (signedInUser) {
+		await window.studyLinkBackend.signOut();
+		updateAuthState(null);
+		showDemoToast('Signed out. Fictional demo mode remains available.');
+		return;
+	}
+	openAuth();
+});
+document.querySelectorAll('[data-close-auth]').forEach((closeButton) => closeButton.addEventListener('click', closeAuth));
+googleSignin.addEventListener('click', async () => {
+	if (!backendConnected) {
+		showDemoToast('Add your Supabase configuration before using Google sign-in.');
+		return;
+	}
+	const { error } = await window.studyLinkBackend.signInWithGoogle();
+	if (error) showDemoToast('Google sign-in could not start. Check the Supabase provider settings.');
+});
 workshopPause.addEventListener('click', () => {
 	if (workshopPaused) {
 		if (workshopSeconds <= 0) workshopSeconds = 3600;
@@ -306,4 +360,5 @@ document.addEventListener('keydown', (event) => {
 	if (event.key === 'Escape' && appModal.classList.contains('is-open')) closeProfile();
 	if (event.key === 'Escape' && guideDrawer.classList.contains('is-open')) closeGuide();
 	if (event.key === 'Escape' && workshopDrawer.classList.contains('is-open')) closeWorkshop();
+	if (event.key === 'Escape' && authModal.classList.contains('is-open')) closeAuth();
 });
