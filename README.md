@@ -19,6 +19,10 @@ The website includes an optional Supabase adapter. Without configuration it stay
 
 The service-role key must never be placed in `supabase-config.js` or committed to GitHub. The public anon/publishable key is intended for browser use; database access is controlled by Supabase RLS policies.
 
+### Username-only demo accounts
+
+The custom account form asks for a StudyLink name and password only. Supabase Auth stores the password securely and uses an internal `@demo.studylink.app` identifier; the identifier is not shown to users and is not a personal email address. For this school prototype, open **Authentication > Providers > Email** and turn off **Confirm email** so a newly created demo account can sign in immediately. Add real email-based recovery before using this outside the prototype.
+
 ## Publish With GitHub Pages
 
 1. Create a GitHub repository named `StudyLink`.
