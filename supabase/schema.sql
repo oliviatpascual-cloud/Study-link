@@ -73,7 +73,8 @@ values
   ('00000000-0000-0000-0000-000000000001', 'Jordan Lee', 8, 'student', array['Math'], array['Linear equations'], 'Today after school'),
   ('00000000-0000-0000-0000-000000000002', 'Maya R.', 8, 'tutor', array['Math'], array['Algebra', 'Linear equations'], 'Available today'),
   ('00000000-0000-0000-0000-000000000003', 'Sam P.', 7, 'tutor', array['Math', 'Science'], array['Fractions', 'Atoms'], 'Tomorrow afternoon'),
-  ('00000000-0000-0000-0000-000000000004', 'Alex T.', 8, 'tutor', array['English'], array['Writing', 'Evidence'], 'Weekday evenings')
+  ('00000000-0000-0000-0000-000000000004', 'Alex T.', 8, 'tutor', array['English'], array['Writing', 'Evidence'], 'Weekday evenings'),
+  ('00000000-0000-0000-0000-000000000005', 'David K.', 8, 'student', array['Science'], array['Atoms'], 'Today after school')
 on conflict (id) do update set
   display_name = excluded.display_name,
   grade_level = excluded.grade_level,

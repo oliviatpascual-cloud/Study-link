@@ -8,6 +8,8 @@ StudyLink is now a complete static GitHub Pages app prototype in `index.html` wi
 
 All people and scores shown are fictional demo data.
 
+The login screen includes two one-click test profiles: **Maya R.** as a Grade 8 tutor and **David K.** as a Grade 8 student. These are fictional demo identities and do not create real accounts.
+
 ## Supabase Website Backend
 
 The website includes an optional Supabase adapter. Without configuration it stays in local demo mode. To enable backend message storage:

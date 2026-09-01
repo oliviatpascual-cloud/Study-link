@@ -70,6 +70,7 @@ let signedInProfileId = null;
 let authMode = 'create';
 let activeProfile = null;
 let mayaApproved = false;
+let demoAccount = false;
 const workshopPrompts = [
 	'What would make a student feel comfortable asking for help?',
 	'Which matching signal should matter most for a first session?',
@@ -82,9 +83,10 @@ const workshopPrompts = [
 ];
 let backendConnected = false;
 const demoProfiles = {
-	jordan: { initial: 'J', name: 'Jordan Lee', shortName: 'Jordan', role: 'Grade 8 student', avatarClass: 'avatar-student', subtitle: 'Ready to make a little progress?' },
-	maya: { initial: 'M', name: 'Maya R.', shortName: 'Maya', role: 'Grade 8 tutor', avatarClass: 'avatar-maya', subtitle: 'Ready to help someone get unstuck?' },
-	sam: { initial: 'S', name: 'Sam P.', shortName: 'Sam', role: 'Grade 7 tutor', avatarClass: 'avatar-jordan', subtitle: 'Ready to make a little progress?' }
+	jordan: { id: '00000000-0000-0000-0000-000000000001', initial: 'J', name: 'Jordan Lee', shortName: 'Jordan', role: 'Grade 8 student', grade: 8, avatarClass: 'avatar-student', subtitle: 'Ready to make a little progress?' },
+	maya: { id: '00000000-0000-0000-0000-000000000002', initial: 'M', name: 'Maya R.', shortName: 'Maya', role: 'Grade 8 tutor', grade: 8, avatarClass: 'avatar-maya', subtitle: 'Ready to help someone get unstuck?' },
+	sam: { id: '00000000-0000-0000-0000-000000000003', initial: 'S', name: 'Sam P.', shortName: 'Sam', role: 'Grade 7 tutor', grade: 7, avatarClass: 'avatar-jordan', subtitle: 'Ready to make a little progress?' },
+	david: { id: '00000000-0000-0000-0000-000000000005', initial: 'D', name: 'David K.', shortName: 'David', role: 'Grade 8 student', grade: 8, avatarClass: 'avatar-student', subtitle: 'Ready to make a little progress?' }
 };
 
 function showDemoToast(message) {
@@ -176,8 +178,8 @@ function applyProfile(profile) {
 	greetingName.textContent = profile.display_name;
 	greetingSubtitle.textContent = profile.role === 'tutor' ? 'Ready to help someone get unstuck?' : 'Ready to make a little progress?';
 	focusGrade.textContent = `Grade ${profile.grade_level}`;
-	studentRequestName.textContent = profile.display_name;
-	studentRequestGrade.textContent = `Grade ${profile.grade_level}`;
+	studentRequestName.textContent = profile.role === 'tutor' ? 'David K.' : profile.display_name;
+	studentRequestGrade.textContent = profile.role === 'tutor' ? 'Grade 8' : `Grade ${profile.grade_level}`;
 	settingsAvatar.textContent = profile.display_name.slice(0, 1).toUpperCase();
 	settingsName.value = profile.display_name;
 	settingsGrade.value = String(profile.grade_level);
@@ -188,7 +190,17 @@ function enterWorkspace(profile) {
 	applyProfile(profile);
 	authGate.classList.add('is-hidden');
 	document.body.classList.remove('auth-locked');
+	showScreen(profile.role === 'tutor' ? 'tutor' : 'dashboard');
 	showDemoToast(`Welcome to StudyLink, ${profile.display_name}.`);
+}
+
+function enterDemoAccount(profileId) {
+	const demo = demoProfiles[profileId];
+	demoAccount = true;
+	signedInUser = { id: demo.id, user_metadata: { username: demo.display_name }, demo: true };
+	signedInProfileId = demo.id;
+	updateAuthState(signedInUser);
+	enterWorkspace({ id: demo.id, display_name: demo.name, grade_level: demo.grade, role: demo.role.includes('tutor') ? 'tutor' : 'student', subjects: ['Math'], topics: ['Linear equations'], availability: 'Demo availability' });
 }
 
 function showAuthOnly() {
@@ -226,6 +238,15 @@ function updateAuthState(user) {
 }
 
 async function signOutAndLock() {
+	if (demoAccount) {
+		demoAccount = false;
+		updateAuthState(null);
+		signedInUser = null;
+		signedInProfileId = null;
+		showAuthOnly();
+		showDemoToast('Test account signed out.');
+		return true;
+	}
 	const { error } = await window.studyLinkBackend.signOut();
 	if (error) {
 		showDemoToast('Sign out could not be completed. Please try again.');
@@ -359,6 +380,7 @@ createForm.addEventListener('submit', async (event) => {
 
 showCreate.addEventListener('click', () => setAuthView('create'));
 showLogin.addEventListener('click', () => setAuthView('login'));
+document.querySelectorAll('[data-demo-profile]').forEach((button) => button.addEventListener('click', () => enterDemoAccount(button.dataset.demoProfile)));
 
 demoStart.addEventListener('click', () => {
 	showDemoToast('Demo student profile loaded: Grade 8 Math, linear equations, explanation.');
