@@ -10,6 +10,7 @@ const roomView = document.querySelector('#room-view');
 const roomTimer = document.querySelector('.room-timer');
 const profileSwitcher = document.querySelector('#profile-switcher');
 const profileMenu = document.querySelector('#profile-menu');
+const profileSignout = document.querySelector('#profile-signout');
 const sidebarAvatar = document.querySelector('#sidebar-avatar');
 const sidebarName = document.querySelector('#sidebar-name');
 const sidebarRole = document.querySelector('#sidebar-role');
@@ -155,10 +156,12 @@ function updateAuthState(user) {
 	if (user) {
 		authButton.textContent = 'Sign out';
 		authButton.classList.add('is-signed-in');
+		profileSignout.hidden = false;
 		showDemoToast('Signed in securely. Your profile is connected to this account.');
 	} else {
 		authButton.textContent = 'Sign in';
 		authButton.classList.remove('is-signed-in');
+		profileSignout.hidden = true;
 	}
 }
 
@@ -267,12 +270,27 @@ workshopStart.addEventListener('click', startWorkshop);
 document.querySelectorAll('[data-close-workshop]').forEach((closeButton) => closeButton.addEventListener('click', closeWorkshop));
 authButton.addEventListener('click', async () => {
 	if (signedInUser) {
-		await window.studyLinkBackend.signOut();
+		const { error } = await window.studyLinkBackend.signOut();
+		if (error) {
+			showDemoToast('Sign out could not be completed. Please try again.');
+			return;
+		}
 		updateAuthState(null);
 		showDemoToast('Signed out. Fictional demo mode remains available.');
 		return;
 	}
 	openAuth();
+});
+profileSignout.addEventListener('click', async () => {
+	const { error } = await window.studyLinkBackend.signOut();
+	if (error) {
+		showDemoToast('Sign out could not be completed. Please try again.');
+		return;
+	}
+	updateAuthState(null);
+	profileMenu.hidden = true;
+	profileSwitcher.setAttribute('aria-expanded', 'false');
+	showDemoToast('Signed out. Fictional demo mode remains available.');
 });
 document.querySelectorAll('[data-close-auth]').forEach((closeButton) => closeButton.addEventListener('click', closeAuth));
 authModeSwitch.addEventListener('click', () => setAuthMode(authMode === 'create' ? 'sign-in' : 'create'));
