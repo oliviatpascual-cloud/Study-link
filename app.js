@@ -36,6 +36,28 @@ const authUsername = document.querySelector('#auth-username');
 const authPassword = document.querySelector('#auth-password');
 const authEyebrow = document.querySelector('#auth-eyebrow');
 const authCopy = document.querySelector('#auth-copy');
+const authGate = document.querySelector('#auth-gate');
+const loginForm = document.querySelector('#login-form');
+const createForm = document.querySelector('#create-form');
+const showCreate = document.querySelector('#show-create');
+const showLogin = document.querySelector('#show-login');
+const loginView = document.querySelector('#login-view');
+const createView = document.querySelector('#create-view');
+const chatOpen = document.querySelector('#chat-open');
+const chatDrawer = document.querySelector('#chat-drawer');
+const chatForm = document.querySelector('#chat-form');
+const chatInput = document.querySelector('#chat-input');
+const chatMessages = document.querySelector('#chat-messages');
+const settingsForm = document.querySelector('#settings-form');
+const settingsSignout = document.querySelector('#settings-signout');
+const settingsAvatar = document.querySelector('#settings-avatar');
+const settingsName = document.querySelector('#settings-name');
+const settingsGrade = document.querySelector('#settings-grade');
+const settingsRole = document.querySelector('#settings-role');
+const settingsPassword = document.querySelector('#settings-password');
+const focusGrade = document.querySelector('#focus-grade');
+const studentRequestName = document.querySelector('#student-request-name');
+const studentRequestGrade = document.querySelector('#student-request-grade');
 let toastTimer;
 let sessionTimer;
 let sessionSeconds = 0;
@@ -46,6 +68,8 @@ let promptIndex = 0;
 let signedInUser = null;
 let signedInProfileId = null;
 let authMode = 'create';
+let activeProfile = null;
+let mayaApproved = false;
 const workshopPrompts = [
 	'What would make a student feel comfortable asking for help?',
 	'Which matching signal should matter most for a first session?',
@@ -136,6 +160,42 @@ function openAuth() {
 	authModal.setAttribute('aria-hidden', 'false');
 }
 
+function setAuthView(view) {
+	loginView.classList.toggle('is-active', view === 'login');
+	createView.classList.toggle('is-active', view === 'create');
+}
+
+function applyProfile(profile) {
+	if (!profile) return;
+	activeProfile = profile;
+	sidebarAvatar.textContent = profile.display_name.slice(0, 1).toUpperCase();
+	sidebarName.textContent = profile.display_name;
+	sidebarRole.textContent = `Grade ${profile.grade_level} ${profile.role}`;
+	topAvatar.textContent = profile.display_name.slice(0, 1).toUpperCase();
+	topName.textContent = profile.display_name;
+	greetingName.textContent = profile.display_name;
+	greetingSubtitle.textContent = profile.role === 'tutor' ? 'Ready to help someone get unstuck?' : 'Ready to make a little progress?';
+	focusGrade.textContent = `Grade ${profile.grade_level}`;
+	studentRequestName.textContent = profile.display_name;
+	studentRequestGrade.textContent = `Grade ${profile.grade_level}`;
+	settingsAvatar.textContent = profile.display_name.slice(0, 1).toUpperCase();
+	settingsName.value = profile.display_name;
+	settingsGrade.value = String(profile.grade_level);
+	settingsRole.value = profile.role;
+}
+
+function enterWorkspace(profile) {
+	applyProfile(profile);
+	authGate.classList.add('is-hidden');
+	document.body.classList.remove('auth-locked');
+	showDemoToast(`Welcome to StudyLink, ${profile.display_name}.`);
+}
+
+function showAuthOnly() {
+	authGate.classList.remove('is-hidden');
+	document.body.classList.add('auth-locked');
+}
+
 function closeAuth() {
 	authModal.classList.remove('is-open');
 	authModal.setAttribute('aria-hidden', 'true');
@@ -163,6 +223,21 @@ function updateAuthState(user) {
 		authButton.classList.remove('is-signed-in');
 		profileSignout.hidden = true;
 	}
+}
+
+async function signOutAndLock() {
+	const { error } = await window.studyLinkBackend.signOut();
+	if (error) {
+		showDemoToast('Sign out could not be completed. Please try again.');
+		return false;
+	}
+	updateAuthState(null);
+	signedInUser = null;
+	signedInProfileId = null;
+	authGate.classList.remove('is-hidden');
+	document.body.classList.add('auth-locked');
+	showDemoToast('Signed out.');
+	return true;
 }
 
 function updateWorkshopClock() {
@@ -224,12 +299,66 @@ window.studyLinkBackend.connect().then((connected) => {
 }).then(({ data }) => {
 	if (data && data.session) {
 		updateAuthState(data.session.user);
-		return window.studyLinkBackend.ensureProfile(data.session.user);
+		return window.studyLinkBackend.getProfile(data.session.user.id);
 	}
 	return null;
 }).then((result) => {
-	if (result && result.data) signedInProfileId = result.data.id;
+	if (result && result.data) {
+		signedInProfileId = result.data.id;
+		enterWorkspace(result.data);
+	} else {
+		showAuthOnly();
+	}
 });
+
+function authErrorMessage(error) {
+	if (!error) return 'Something went wrong. Please try again.';
+	if (error.message?.toLowerCase().includes('already registered')) return 'That StudyLink name is already taken.';
+	if (error.message?.toLowerCase().includes('invalid login')) return 'That name or password is not correct.';
+	return error.message;
+}
+
+async function finishAuth(result, profileValues) {
+	if (result.error) {
+		showDemoToast(authErrorMessage(result.error));
+		return;
+	}
+	if (!result.data?.session || !result.data?.user) {
+		showDemoToast('Account created. Turn off email confirmation in Supabase, then log in.');
+		setAuthView('login');
+		return;
+	}
+	const profileResult = profileValues ? await window.studyLinkBackend.createProfile(result.data.user, profileValues) : await window.studyLinkBackend.getProfile(result.data.user.id);
+	if (profileResult.error || !profileResult.data) {
+		showDemoToast(profileResult.error?.message || 'Your account was created, but the profile could not be saved.');
+		return;
+	}
+	signedInProfileId = profileResult.data.id;
+	updateAuthState(result.data.user);
+	enterWorkspace(profileResult.data);
+}
+
+loginForm.addEventListener('submit', async (event) => {
+	event.preventDefault();
+	const submit = loginForm.querySelector('button[type="submit"]');
+	submit.disabled = true;
+	const result = await window.studyLinkBackend.signIn(loginForm.querySelector('#login-username').value.trim(), loginForm.querySelector('#login-password').value);
+	submit.disabled = false;
+	await finishAuth(result);
+});
+
+createForm.addEventListener('submit', async (event) => {
+	event.preventDefault();
+	const submit = createForm.querySelector('button[type="submit"]');
+	submit.disabled = true;
+	const profileValues = { username: createForm.querySelector('#create-username').value.trim(), grade: Number(createForm.querySelector('#create-grade').value), role: createForm.querySelector('#create-role').value };
+	const result = await window.studyLinkBackend.createAccount(profileValues.username, createForm.querySelector('#create-password').value);
+	submit.disabled = false;
+	await finishAuth(result, profileValues);
+});
+
+showCreate.addEventListener('click', () => setAuthView('create'));
+showLogin.addEventListener('click', () => setAuthView('login'));
 
 demoStart.addEventListener('click', () => {
 	showDemoToast('Demo student profile loaded: Grade 8 Math, linear equations, explanation.');
@@ -263,6 +392,13 @@ document.querySelectorAll('.workspace-nav-item, [data-screen-target], [data-scre
 	event.preventDefault();
 	showScreen(screenButton.dataset.screen || screenButton.dataset.screenTarget || screenButton.dataset.screenLink);
 }));
+profileSwitcher.addEventListener('click', () => {
+	if (signedInUser) {
+		showScreen('settings');
+		return;
+	}
+	toggleProfileMenu();
+});
 guideOpen.addEventListener('click', openGuide);
 document.querySelectorAll('[data-close-guide]').forEach((closeButton) => closeButton.addEventListener('click', closeGuide));
 workshopOpen.addEventListener('click', openWorkshop);
@@ -270,27 +406,16 @@ workshopStart.addEventListener('click', startWorkshop);
 document.querySelectorAll('[data-close-workshop]').forEach((closeButton) => closeButton.addEventListener('click', closeWorkshop));
 authButton.addEventListener('click', async () => {
 	if (signedInUser) {
-		const { error } = await window.studyLinkBackend.signOut();
-		if (error) {
-			showDemoToast('Sign out could not be completed. Please try again.');
-			return;
-		}
-		updateAuthState(null);
-		showDemoToast('Signed out. Fictional demo mode remains available.');
+		await signOutAndLock();
 		return;
 	}
 	openAuth();
 });
 profileSignout.addEventListener('click', async () => {
-	const { error } = await window.studyLinkBackend.signOut();
-	if (error) {
-		showDemoToast('Sign out could not be completed. Please try again.');
-		return;
-	}
-	updateAuthState(null);
+	const signedOut = await signOutAndLock();
+	if (!signedOut) return;
 	profileMenu.hidden = true;
 	profileSwitcher.setAttribute('aria-expanded', 'false');
-	showDemoToast('Signed out. Fictional demo mode remains available.');
 });
 document.querySelectorAll('[data-close-auth]').forEach((closeButton) => closeButton.addEventListener('click', closeAuth));
 authModeSwitch.addEventListener('click', () => setAuthMode(authMode === 'create' ? 'sign-in' : 'create'));
@@ -343,7 +468,6 @@ document.querySelectorAll('[data-start-room]').forEach((roomButton) => roomButto
 	openProfile();
 	window.setTimeout(() => document.querySelector('#start-session').click(), 250);
 }));
-profileSwitcher.addEventListener('click', toggleProfileMenu);
 document.querySelectorAll('.profile-option').forEach((profileOption) => profileOption.addEventListener('click', () => switchProfile(profileOption.dataset.profile)));
 document.addEventListener('click', (event) => {
 	if (!profileMenu.hidden && !profileMenu.contains(event.target) && !profileSwitcher.contains(event.target)) {
@@ -359,9 +483,90 @@ document.querySelectorAll('.choice').forEach((choice) => choice.addEventListener
 document.querySelectorAll('.filter-row select').forEach((select) => select.addEventListener('change', () => {
 	showDemoToast(`${select.value} added to your fictional tutor search.`);
 }));
+document.querySelectorAll('[data-contact-tutor]').forEach((button) => button.addEventListener('click', async () => {
+	if (!signedInUser || !signedInProfileId) {
+		showDemoToast('Log in before contacting a tutor.');
+		return;
+	}
+	button.disabled = true;
+	button.textContent = 'Invite sent';
+	mayaApproved = false;
+	button.classList.add('request-complete');
+	const result = await window.studyLinkBackend.createRequest(signedInProfileId, '00000000-0000-0000-0000-000000000002', 'Linear equations');
+	if (result.error) {
+		button.disabled = false;
+		button.textContent = 'Contact tutor';
+		button.classList.remove('request-complete');
+		showDemoToast('Invite could not be saved. Check the updated Supabase schema.');
+		return;
+	}
+	document.querySelector('#chat-count').textContent = '2';
+	showDemoToast('Invite sent to Maya. Open Chat when she approves.');
+}));
+
+function addChatBubble(text, role) {
+	const bubble = document.createElement('div');
+	bubble.className = `chat-bubble ${role}`;
+	bubble.textContent = text;
+	chatMessages.appendChild(bubble);
+	chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+chatOpen.addEventListener('click', () => {
+	chatDrawer.classList.add('is-open');
+	chatDrawer.setAttribute('aria-hidden', 'false');
+	chatInput.disabled = !mayaApproved;
+	if (!mayaApproved) showDemoToast('Your chat with Maya unlocks after the tutor approves your invite.');
+});
+document.querySelectorAll('[data-close-chat]').forEach((button) => button.addEventListener('click', () => {
+	chatDrawer.classList.remove('is-open');
+	chatDrawer.setAttribute('aria-hidden', 'true');
+}));
+document.querySelectorAll('[data-chat-message]').forEach((button) => button.addEventListener('click', () => {
+	chatInput.value = button.dataset.chatMessage;
+	chatInput.focus();
+}));
+chatForm.addEventListener('submit', async (event) => {
+	event.preventDefault();
+	if (!mayaApproved) {
+		showDemoToast('Maya needs to approve your invite before chat opens.');
+		return;
+	}
+	const text = chatInput.value.trim();
+	if (!text) return;
+	addChatBubble(text, 'student');
+	chatInput.value = '';
+	if (backendConnected && signedInProfileId) await window.studyLinkBackend.sendMessage({ tutorId: '00000000-0000-0000-0000-000000000002', senderId: signedInProfileId, body: text });
+	window.setTimeout(() => addChatBubble('Thanks for sharing. Let us work through it together.', 'tutor'), 500);
+});
+
+settingsForm.addEventListener('submit', async (event) => {
+	event.preventDefault();
+	if (!signedInUser) return;
+	const result = await window.studyLinkBackend.updateProfile(signedInUser.id, { username: settingsName.value.trim(), grade: Number(settingsGrade.value), role: settingsRole.value });
+	if (result.error) {
+		showDemoToast('That display name may already be taken.');
+		return;
+	}
+	applyProfile(result.data);
+	if (settingsPassword.value.trim()) {
+		const passwordResult = await window.studyLinkBackend.updatePassword(settingsPassword.value);
+		if (passwordResult.error) return showDemoToast('Profile saved, but the password could not be updated.');
+		settingsPassword.value = '';
+	}
+	showDemoToast('Profile updated.');
+});
+settingsSignout.addEventListener('click', async () => {
+	await signOutAndLock();
+});
 document.querySelectorAll('.request-row .button').forEach((requestButton) => requestButton.addEventListener('click', () => {
 	requestButton.textContent = requestButton.textContent.trim() === 'Accept' ? 'Accepted' : 'Reviewed';
 	requestButton.classList.add('request-complete');
+	if (requestButton.textContent.trim() === 'Accepted') {
+		mayaApproved = true;
+		chatInput.disabled = false;
+		document.querySelector('#chat-count').textContent = '1';
+	}
 	showDemoToast('Tutor dashboard updated with this demo request.');
 }));
 document.querySelectorAll('[data-quiz-option]').forEach((option) => option.addEventListener('click', () => {
