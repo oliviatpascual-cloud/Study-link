@@ -59,6 +59,14 @@ window.studyLinkBackend = {
     if (!this.client) return { data: null, error: null };
     return this.client.from('tutoring_requests').update({ status: 'approved' }).eq('id', requestId).eq('tutor_id', tutorProfileId).select().single();
   },
+  async listPendingRequests(tutorProfileId) {
+    if (!this.client || !tutorProfileId) return { data: [], error: null };
+    return this.client.from('tutoring_requests').select('*').eq('tutor_id', tutorProfileId).eq('status', 'pending').order('created_at');
+  },
+  async getRequestStatus(studentProfileId, tutorProfileId) {
+    if (!this.client || !studentProfileId || !tutorProfileId) return { data: null, error: null };
+    return this.client.from('tutoring_requests').select('status').eq('student_id', studentProfileId).eq('tutor_id', tutorProfileId).order('created_at', { ascending: false }).limit(1).maybeSingle();
+  },
   async signOut() {
     if (!this.client) return { error: null };
     return this.client.auth.signOut();

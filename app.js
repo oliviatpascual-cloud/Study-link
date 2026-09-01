@@ -71,6 +71,8 @@ let authMode = 'create';
 let activeProfile = null;
 let mayaApproved = false;
 let demoAccount = false;
+const demoRequestStorageKey = 'studylink-demo-request';
+const demoMessagesStorageKey = 'studylink-demo-chat';
 const workshopPrompts = [
 	'What would make a student feel comfortable asking for help?',
 	'Which matching signal should matter most for a first session?',
@@ -94,6 +96,78 @@ function showDemoToast(message) {
 	demoToast.classList.add('is-visible');
 	clearTimeout(toastTimer);
 	toastTimer = window.setTimeout(() => demoToast.classList.remove('is-visible'), 4200);
+}
+
+function getDemoRequest() {
+	try {
+		return JSON.parse(localStorage.getItem(demoRequestStorageKey)) || { status: 'none' };
+	} catch (error) {
+		return { status: 'none' };
+	}
+}
+
+function saveDemoRequest(request) {
+	localStorage.setItem(demoRequestStorageKey, JSON.stringify(request));
+}
+
+function getDemoMessages() {
+	try {
+		return JSON.parse(localStorage.getItem(demoMessagesStorageKey)) || [];
+	} catch (error) {
+		return [];
+	}
+}
+
+function saveDemoMessage(text, role) {
+	const messages = getDemoMessages();
+	messages.push({ text, role });
+	localStorage.setItem(demoMessagesStorageKey, JSON.stringify(messages));
+}
+
+function syncDemoRequestState() {
+	const status = getDemoRequest().status;
+	mayaApproved = status === 'approved';
+	document.querySelectorAll('[data-contact-tutor]').forEach((button) => {
+		button.disabled = status !== 'none';
+		button.textContent = status === 'approved' ? 'Chat unlocked' : status === 'pending' ? 'Invite pending' : 'Contact tutor';
+		button.classList.toggle('request-complete', status !== 'none');
+	});
+	const tutorAccept = document.querySelector('.request-row .button.button-accent');
+	if (tutorAccept) {
+		tutorAccept.disabled = status === 'none' || status === 'approved';
+		tutorAccept.textContent = status === 'approved' ? 'Approved' : 'Accept';
+		tutorAccept.classList.toggle('request-complete', status === 'approved');
+	}
+}
+
+async function refreshRequestState() {
+	if (demoAccount) {
+		syncDemoRequestState();
+		return;
+	}
+	if (!backendConnected || !signedInProfileId) return;
+	if (activeProfile?.role === 'tutor') {
+		return;
+	}
+	const result = await window.studyLinkBackend.getRequestStatus(signedInProfileId, '00000000-0000-0000-0000-000000000002');
+	mayaApproved = result.data?.status === 'approved';
+	chatInput.disabled = !mayaApproved;
+}
+
+function syncDemoRequestState() {
+	const request = getDemoRequest();
+	mayaApproved = request.status === 'approved';
+	document.querySelectorAll('[data-contact-tutor]').forEach((button) => {
+		button.disabled = request.status !== 'none';
+		button.textContent = request.status === 'approved' ? 'Chat unlocked' : request.status === 'pending' ? 'Invite pending' : 'Contact tutor';
+		button.classList.toggle('request-complete', request.status !== 'none');
+	});
+	const tutorAccept = document.querySelector('.request-row .button.button-accent');
+	if (tutorAccept) {
+		tutorAccept.disabled = request.status === 'none' || request.status === 'approved';
+		tutorAccept.textContent = request.status === 'approved' ? 'Approved' : 'Accept';
+		tutorAccept.classList.toggle('request-complete', request.status === 'approved');
+	}
 }
 
 function toggleProfileMenu() {
@@ -199,8 +273,10 @@ function enterDemoAccount(profileId) {
 	demoAccount = true;
 	signedInUser = { id: demo.id, user_metadata: { username: demo.display_name }, demo: true };
 	signedInProfileId = demo.id;
+	syncDemoRequestState();
 	updateAuthState(signedInUser);
 	enterWorkspace({ id: demo.id, display_name: demo.name, grade_level: demo.grade, role: demo.role.includes('tutor') ? 'tutor' : 'student', subjects: ['Math'], topics: ['Linear equations'], availability: 'Demo availability' });
+	syncDemoRequestState();
 }
 
 function showAuthOnly() {
@@ -312,6 +388,14 @@ async function sendMessage() {
 	}
 	window.setTimeout(() => addMessage('Got it. Let us take it one step at a time.', 'tutor'), 550);
 	showDemoToast(backendConnected ? 'Message saved to the Supabase demo room.' : 'Message sent in local demo mode.');
+}
+
+async function loadBackendChat() {
+	if (!backendConnected || demoAccount || !signedInProfileId) return;
+	const result = await window.studyLinkBackend.listMessages('00000000-0000-0000-0000-000000000002', signedInProfileId);
+	if (result.error || !result.data?.length) return;
+	chatMessages.querySelectorAll('.chat-bubble').forEach((bubble) => bubble.remove());
+	result.data.forEach((message) => addChatBubble(message.body, message.sender_id === signedInProfileId ? 'student' : 'tutor'));
 }
 
 window.studyLinkBackend.connect().then((connected) => {
@@ -518,6 +602,7 @@ document.querySelectorAll('[data-contact-tutor]').forEach((button) => button.add
 	button.disabled = true;
 	button.textContent = 'Invite sent';
 	mayaApproved = false;
+	if (demoAccount) saveDemoRequest({ status: 'pending', studentId: signedInProfileId, tutorId: '00000000-0000-0000-0000-000000000002', topic: 'Linear equations' });
 	button.classList.add('request-complete');
 	const result = demoAccount ? { error: null } : await window.studyLinkBackend.createRequest(signedInProfileId, '00000000-0000-0000-0000-000000000002', 'Linear equations');
 	if (result.error) {
@@ -529,20 +614,34 @@ document.querySelectorAll('[data-contact-tutor]').forEach((button) => button.add
 	}
 	document.querySelector('#chat-count').textContent = '2';
 	showDemoToast('Invite sent to Maya. Open Chat when she approves.');
+	if (backendConnected && !demoAccount) {
+		await window.studyLinkBackend.sendMessage({ tutorId: '00000000-0000-0000-0000-000000000002', senderId: signedInProfileId, body: 'Hi Maya, I would like help with linear equations.' });
+	}
 }));
 
-function addChatBubble(text, role) {
+function addChatBubble(text, role, persist = false) {
 	const bubble = document.createElement('div');
 	bubble.className = `chat-bubble ${role}`;
 	bubble.textContent = text;
 	chatMessages.appendChild(bubble);
 	chatMessages.scrollTop = chatMessages.scrollHeight;
+	if (persist) saveDemoMessage(text, role);
+}
+
+function renderDemoMessages() {
+	const messages = getDemoMessages();
+	if (!messages.length) return;
+	chatMessages.querySelectorAll('.chat-bubble').forEach((bubble) => bubble.remove());
+	messages.forEach((message) => addChatBubble(message.text, message.role));
 }
 
 chatOpen.addEventListener('click', () => {
 	chatDrawer.classList.add('is-open');
 	chatDrawer.setAttribute('aria-hidden', 'false');
 	chatInput.disabled = !mayaApproved;
+	renderDemoMessages();
+	loadBackendChat();
+	refreshRequestState();
 	if (!mayaApproved) showDemoToast('Your chat with Maya unlocks after the tutor approves your invite.');
 });
 document.querySelectorAll('[data-close-chat]').forEach((button) => button.addEventListener('click', () => {
@@ -561,10 +660,13 @@ chatForm.addEventListener('submit', async (event) => {
 	}
 	const text = chatInput.value.trim();
 	if (!text) return;
-	addChatBubble(text, 'student');
+	addChatBubble(text, 'student', demoAccount);
 	chatInput.value = '';
-	if (backendConnected && !demoAccount && signedInProfileId) await window.studyLinkBackend.sendMessage({ tutorId: '00000000-0000-0000-0000-000000000002', senderId: signedInProfileId, body: text });
-	window.setTimeout(() => addChatBubble('Thanks for sharing. Let us work through it together.', 'tutor'), 500);
+	if (backendConnected && !demoAccount && signedInProfileId) {
+		const result = await window.studyLinkBackend.sendMessage({ tutorId: '00000000-0000-0000-0000-000000000002', senderId: signedInProfileId, body: text });
+		if (result.error) showDemoToast('Message could not be saved. Please try again.');
+	}
+	window.setTimeout(() => addChatBubble('Thanks for sharing. Let us work through it together.', 'tutor', demoAccount), 500);
 });
 
 settingsForm.addEventListener('submit', async (event) => {
@@ -592,13 +694,21 @@ settingsSignout.addEventListener('click', async () => {
 	await signOutAndLock();
 });
 document.querySelectorAll('.request-row .button').forEach((requestButton) => requestButton.addEventListener('click', () => {
+	if (requestButton.disabled) return;
 	requestButton.textContent = requestButton.textContent.trim() === 'Accept' ? 'Accepted' : 'Reviewed';
 	requestButton.classList.add('request-complete');
 	if (requestButton.textContent.trim() === 'Accepted') {
 		mayaApproved = true;
+		if (demoAccount) saveDemoRequest({ status: 'approved', studentId: '00000000-0000-0000-0000-000000000005', tutorId: '00000000-0000-0000-0000-000000000002', topic: 'Linear equations' });
 		chatInput.disabled = false;
 		document.querySelector('#chat-count').textContent = '1';
-		if (backendConnected && !demoAccount && signedInProfileId && requestButton.dataset.requestId) window.studyLinkBackend.approveRequest(requestButton.dataset.requestId, signedInProfileId);
+		if (backendConnected && !demoAccount && signedInProfileId) {
+			window.studyLinkBackend.listPendingRequests(signedInProfileId).then((result) => {
+				const request = result.data?.[0];
+				if (request) return window.studyLinkBackend.approveRequest(request.id, signedInProfileId);
+				return null;
+			});
+		}
 	}
 	showDemoToast('Tutor dashboard updated with this demo request.');
 }));
