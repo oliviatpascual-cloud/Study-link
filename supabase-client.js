@@ -21,6 +21,11 @@ window.studyLinkBackend = {
     if (!this.client || !userId) return { data: null, error: null };
     return this.client.from('profiles').select('*').eq('user_id', userId).maybeSingle();
   },
+  async usernameTaken(username) {
+    if (!this.client) return false;
+    const result = await this.client.from('profiles').select('id').ilike('username', username).maybeSingle();
+    return Boolean(result.data);
+  },
   async getSession() {
     if (!this.client) return { data: { session: null }, error: null };
     return this.client.auth.getSession();
@@ -49,6 +54,10 @@ window.studyLinkBackend = {
   async createRequest(studentId, tutorId, topic) {
     if (!this.client) return { data: null, error: null };
     return this.client.from('tutoring_requests').insert({ student_id: studentId, tutor_id: tutorId, topic, status: 'pending' }).select().single();
+  },
+  async approveRequest(requestId, tutorProfileId) {
+    if (!this.client) return { data: null, error: null };
+    return this.client.from('tutoring_requests').update({ status: 'approved' }).eq('id', requestId).eq('tutor_id', tutorProfileId).select().single();
   },
   async signOut() {
     if (!this.client) return { error: null };

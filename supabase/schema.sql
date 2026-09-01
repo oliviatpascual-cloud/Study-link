@@ -58,14 +58,19 @@ drop policy if exists "own profiles editable" on public.profiles;
 drop policy if exists "signed in messages insertable" on public.messages;
 drop policy if exists "signed in requests insertable" on public.tutoring_requests;
 drop policy if exists "request participants readable" on public.tutoring_requests;
+drop policy if exists "tutor can approve requests" on public.tutoring_requests;
 create policy "demo profiles readable" on public.profiles for select using (true);
 create policy "signed in profiles insertable" on public.profiles for insert with check (auth.uid() = user_id);
 create policy "own profiles editable" on public.profiles for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
-create policy "demo messages readable" on public.messages for select using (true);
+create policy "conversation participants readable" on public.messages for select using (
+  auth.uid() = (select user_id from public.profiles where id = sender_id)
+  or auth.uid() = (select user_id from public.profiles where id = tutor_id)
+);
 create policy "signed in messages insertable" on public.messages for insert with check (auth.uid() = (select user_id from public.profiles where id = sender_id));
 create policy "demo sessions readable" on public.sessions for select using (true);
 create policy "signed in requests insertable" on public.tutoring_requests for insert with check (auth.uid() = (select user_id from public.profiles where id = student_id));
 create policy "request participants readable" on public.tutoring_requests for select using (auth.uid() = (select user_id from public.profiles where id = student_id) or auth.uid() = (select user_id from public.profiles where id = tutor_id));
+create policy "tutor can approve requests" on public.tutoring_requests for update using (auth.uid() = (select user_id from public.profiles where id = tutor_id)) with check (auth.uid() = (select user_id from public.profiles where id = tutor_id));
 
 -- Fictional demo records for the StudyLink prototype.
 insert into public.profiles (id, display_name, grade_level, role, subjects, topics, availability)

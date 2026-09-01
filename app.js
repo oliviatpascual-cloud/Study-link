@@ -373,6 +373,11 @@ createForm.addEventListener('submit', async (event) => {
 	const submit = createForm.querySelector('button[type="submit"]');
 	submit.disabled = true;
 	const profileValues = { username: createForm.querySelector('#create-username').value.trim(), grade: Number(createForm.querySelector('#create-grade').value), role: createForm.querySelector('#create-role').value };
+	if (backendConnected && await window.studyLinkBackend.usernameTaken(profileValues.username)) {
+		submit.disabled = false;
+		showDemoToast('That StudyLink name is already taken. Choose another.');
+		return;
+	}
 	const result = await window.studyLinkBackend.createAccount(profileValues.username, createForm.querySelector('#create-password').value);
 	submit.disabled = false;
 	await finishAuth(result, profileValues);
@@ -514,7 +519,7 @@ document.querySelectorAll('[data-contact-tutor]').forEach((button) => button.add
 	button.textContent = 'Invite sent';
 	mayaApproved = false;
 	button.classList.add('request-complete');
-	const result = await window.studyLinkBackend.createRequest(signedInProfileId, '00000000-0000-0000-0000-000000000002', 'Linear equations');
+	const result = demoAccount ? { error: null } : await window.studyLinkBackend.createRequest(signedInProfileId, '00000000-0000-0000-0000-000000000002', 'Linear equations');
 	if (result.error) {
 		button.disabled = false;
 		button.textContent = 'Contact tutor';
@@ -558,13 +563,18 @@ chatForm.addEventListener('submit', async (event) => {
 	if (!text) return;
 	addChatBubble(text, 'student');
 	chatInput.value = '';
-	if (backendConnected && signedInProfileId) await window.studyLinkBackend.sendMessage({ tutorId: '00000000-0000-0000-0000-000000000002', senderId: signedInProfileId, body: text });
+	if (backendConnected && !demoAccount && signedInProfileId) await window.studyLinkBackend.sendMessage({ tutorId: '00000000-0000-0000-0000-000000000002', senderId: signedInProfileId, body: text });
 	window.setTimeout(() => addChatBubble('Thanks for sharing. Let us work through it together.', 'tutor'), 500);
 });
 
 settingsForm.addEventListener('submit', async (event) => {
 	event.preventDefault();
 	if (!signedInUser) return;
+	if (demoAccount) {
+		applyProfile({ id: signedInProfileId, display_name: settingsName.value.trim(), grade_level: Number(settingsGrade.value), role: settingsRole.value });
+		showDemoToast('Test profile updated locally.');
+		return;
+	}
 	const result = await window.studyLinkBackend.updateProfile(signedInUser.id, { username: settingsName.value.trim(), grade: Number(settingsGrade.value), role: settingsRole.value });
 	if (result.error) {
 		showDemoToast('That display name may already be taken.');
@@ -588,6 +598,7 @@ document.querySelectorAll('.request-row .button').forEach((requestButton) => req
 		mayaApproved = true;
 		chatInput.disabled = false;
 		document.querySelector('#chat-count').textContent = '1';
+		if (backendConnected && !demoAccount && signedInProfileId && requestButton.dataset.requestId) window.studyLinkBackend.approveRequest(requestButton.dataset.requestId, signedInProfileId);
 	}
 	showDemoToast('Tutor dashboard updated with this demo request.');
 }));
